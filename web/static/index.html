@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ArduPilot Log Viewer</title>
+<!-- Plotly.js for interactive plots -->
+<script src="https://cdn.plot.ly/plotly-2.35.0.min.js"></script>
+<style>
+/* ===== Reset & Base ===== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg-dark: #1a1a22;
+  --bg-panel: #1e1e28;
+  --bg-input: #14141a;
+  --text: #d8d8d8;
+  --text-dim: #888;
+  --accent-blue: #3b82f6;
+  --accent-green: #22c55e;
+  --accent-red: #ef4444;
+  --accent-orange: #f59e0b;
+  --accent-purple: #a855f7;
+  --border: #333340;
+}
+html, body { height: 100%; font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg-dark); color: var(--text); overflow: hidden; }
+
+/* ===== Layout ===== */
+#app { display: flex; flex-direction: column; height: 100vh; }
+#toolbar { display: flex; align-items: center; gap: 8px; padding: 6px 12px; background: #22222d; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+#main { display: flex; flex: 1; overflow: hidden; }
+#sidebar { width: 310px; min-width: 260px; max-width: 400px; background: var(--bg-panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0; }
+#content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+/* ===== Toolbar Buttons ===== */
+.tb-btn { padding: 5px 14px; border: none; border-radius: 4px; font-size: 13px; font-weight: 600; cursor: pointer; color: #fff; transition: filter .15s; }
+.tb-btn:hover { filter: brightness(1.15); }
+.tb-btn.blue  { background: var(--accent-blue); }
+.tb-btn.orange { background: #b8860b; }
+.tb-btn.green { background: #2d8a56; }
+.tb-btn.red   { background: var(--accent-red); }
+.tb-btn.purple { background: var(--accent-purple); }
+#fileLabel { color: var(--text-dim); font-size: 12px; margin-left: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px; }
+
+/* ===== Sidebar Sections ===== */
+.side-section { padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.side-section h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+.side-section h3.param-hdr  { color: #e69520; }
+.side-section h3.active-hdr { color: #22d3ee; }
+.side-section h3.expr-hdr   { color: #c084fc; }
+.side-section h3.deriv-hdr  { color: #fbbf24; }
+
+/* ===== Parameter Tree ===== */
+#paramTree { flex: 1; overflow-y: auto; min-height: 80px; }
+.tree-group { cursor: pointer; padding: 3px 6px; font-size: 13px; font-weight: 600; color: #ccc; user-select: none; }
+.tree-group:hover { background: rgba(255,255,255,.05); }
+.tree-group .arrow { display: inline-block; width: 14px; font-size: 10px; color: #888; }
+.tree-fields { display: none; padding-left: 20px; }
+.tree-fields.open { display: block; }
+.tree-field { padding: 2px 6px; font-size: 12px; color: #aaa; cursor: pointer; border-radius: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tree-field:hover { background: rgba(59,130,246,.15); color: #ddd; }
+.tree-field.selected { background: rgba(59,130,246,.25); color: #fff; }
+
+/* ===== Active Plots List ===== */
+#activeList { max-height: 90px; overflow-y: auto; }
+.active-item { display: flex; align-items: center; gap: 4px; padding: 2px 6px; font-size: 12px; }
+.active-item .swatch { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+.active-item span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.active-item .remove-btn { background: none; border: none; color: var(--accent-red); cursor: pointer; font-size: 14px; font-weight: bold; line-height: 1; padding: 0 2px; }
+
+/* ===== Inputs & Small Buttons ===== */
+.side-row { display: flex; gap: 4px; margin-bottom: 4px; }
+.side-input { flex: 1; background: var(--bg-input); color: var(--text); border: 1px solid var(--border); border-radius: 3px; padding: 4px 6px; font-size: 12px; outline: none; }
+.side-input:focus { border-color: var(--accent-blue); }
+.side-btn { padding: 4px 10px; border: none; border-radius: 3px; font-size: 12px; font-weight: 600; cursor: pointer; color: #fff; white-space: nowrap; }
+.side-btn:hover { filter: brightness(1.15); }
+.side-btn.green  { background: var(--accent-green); }
+.side-btn.purple { background: var(--accent-purple); }
+.side-btn.orange { background: #c97b0a; }
+.side-btn.red    { background: var(--accent-red); }
+.side-btn.teal   { background: #0d9488; }
+
+/* ===== Derived List ===== */
+#derivedList { max-height: 100px; overflow-y: auto; }
+.deriv-item { padding: 2px 6px; font-size: 11px; color: #bbb; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.deriv-item .saved-tag { color: var(--accent-green); font-weight: 600; font-size: 10px; }
+
+/* ===== Plots ===== */
+#timePlot { flex: 1; min-height: 200px; }
+#mapPlot  { height: 44%; min-height: 180px; border-top: 1px solid var(--border); }
+
+/* ===== Modal ===== */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.modal { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 8px; padding: 20px; min-width: 450px; max-width: 90vw; max-height: 85vh; overflow-y: auto; }
+.modal h2 { font-size: 16px; margin-bottom: 12px; color: var(--accent-orange); }
+.modal-close { float: right; background: none; border: none; color: #999; cursor: pointer; font-size: 20px; }
+.modal-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+.modal-table th { background: #2a2a38; color: #ccc; padding: 6px 8px; text-align: left; font-weight: 600; border-bottom: 1px solid var(--border); }
+.modal-table td { padding: 5px 8px; border-bottom: 1px solid #2a2a35; color: #bbb; }
+.modal-table tr:hover td { background: rgba(255,255,255,.03); }
+.modal-btn { padding: 3px 10px; border: none; border-radius: 3px; font-size: 11px; cursor: pointer; color: #fff; margin-left: 4px; }
+.modal-btn.save { background: var(--accent-green); }
+.modal-btn.del { background: var(--accent-red); }
+.modal-btn.override { background: #b8860b; }
+.modal-btn.export { background: var(--accent-blue); }
+
+/* ===== Toast Notification ===== */
+#toast { position: fixed; bottom: 20px; right: 20px; background: #2d2d3a; color: #fff; padding: 10px 18px; border-radius: 6px; font-size: 13px; opacity: 0; transition: opacity .3s; pointer-events: none; z-index: 2000; border-left: 3px solid var(--accent-blue); }
+#toast.show { opacity: 1; }
+
+/* ===== Scrollbar ===== */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+
+/* ===== Loading Spinner ===== */
+#loadingOverlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: none; align-items: center; justify-content: center; z-index: 3000; }
+#loadingOverlay.active { display: flex; }
+.spinner { width: 40px; height: 40px; border: 4px solid #444; border-top-color: var(--accent-blue); border-radius: 50%; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- ===== TOOLBAR ===== -->
+  <div id="toolbar">
+    <button class="tb-btn blue" id="btnLoad">Load .bin File</button>
+    <input type="file" id="fileInput" accept=".bin" style="display:none">
+    <span id="fileLabel">No file loaded</span>
+    <div style="flex:1"></div>
+    <button class="tb-btn green" id="btnSegment">Segment Analysis</button>
+    <button class="tb-btn" id="btnCalcDist" style="background:#0ea5e9">Calc Distance</button>
+    <button class="tb-btn orange" id="btnDerivMgr">Saved Derivatives</button>
+    <button class="tb-btn purple" id="btnFilter">Filter Signal</button>
+    <button class="tb-btn red" id="btnClear">Clear All</button>
+  </div>
+
+  <div id="main">
+    <!-- ===== SIDEBAR ===== -->
+    <div id="sidebar">
+      <!-- Available Parameters -->
+      <div class="side-section" style="flex:1; display:flex; flex-direction:column; overflow: hidden;">
+        <h3 class="param-hdr">Available Parameters</h3>
+        <div id="paramTree"></div>
+      </div>
+
+      <!-- Add to Plot / Insert -->
+      <div class="side-section">
+        <div class="side-row">
+          <button class="side-btn green" id="btnAddPlot" style="flex:1">Add to Plot &gt;&gt;</button>
+          <button class="side-btn purple" id="btnInsertExpr" style="flex:1">Insert into Expr ↓</button>
+        </div>
+      </div>
+
+      <!-- Active Plots -->
+      <div class="side-section">
+        <div style="display:flex; align-items:center; justify-content:space-between;">
+          <h3 class="active-hdr" style="margin:0">Active Plots</h3>
+          <button class="side-btn" id="btnClearSidebar" style="display:none; background:#ef4444; color:#fff; font-size:11px; padding:2px 8px;">Clear All</button>
+        </div>
+        <div id="activeList"></div>
+      </div>
+
+      <!-- Expression -->
+      <div class="side-section">
+        <h3 class="expr-hdr">Add Expression</h3>
+        <div class="side-row">
+          <input class="side-input" id="exprInput" placeholder="e.g. GPS_0.Spd * 6.9">
+          <button class="side-btn purple" id="btnPlotExpr">Plot</button>
+        </div>
+      </div>
+
+      <!-- Derived Parameters -->
+      <div class="side-section">
+        <h3 class="deriv-hdr">Derived Parameters</h3>
+        <div class="side-row">
+          <span style="font-size:11px; color:#999; width:42px;">Name:</span>
+          <input class="side-input" id="derivName" placeholder="e.g. SpeedKmh">
+        </div>
+        <div class="side-row">
+          <span style="font-size:11px; color:#999; width:42px;">Expr:</span>
+          <input class="side-input" id="derivExpr" placeholder="e.g. GPS_0.Spd * 6.9">
+        </div>
+        <div class="side-row">
+          <button class="side-btn orange" id="btnCreateDeriv" style="flex:1">Create Derived</button>
+          <button class="side-btn purple" id="btnDdt" title="Time derivative (d/dt)">∂/∂t</button>
+        </div>
+        <div id="derivedList"></div>
+      </div>
+    </div>
+
+    <!-- ===== CONTENT: PLOTS ===== -->
+    <div id="content">
+      <div id="timePlot"></div>
+      <div id="mapPlot"></div>
+    </div>
+  </div>
+</div>
+
+<div id="loadingOverlay"><div class="spinner"></div></div>
+<div id="toast"></div>
+
+<script src="main.js"></script>
+</body>
+</html>
