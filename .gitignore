@@ -8,5 +8,6 @@ build/
 web/user_data/
 *.bin
 *.log
+*.bak
 venv/
 .venv/
