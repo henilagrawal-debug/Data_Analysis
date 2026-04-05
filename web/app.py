@@ -26,9 +26,15 @@ API endpoints:
 import json
 import os
 import re as _re
+import sys
 import tempfile
 import uuid
 from pathlib import Path
+
+# Ensure the web/ directory is on sys.path so imports work from any CWD
+_WEB_DIR = str(Path(__file__).resolve().parent)
+if _WEB_DIR not in sys.path:
+    sys.path.insert(0, _WEB_DIR)
 
 import numpy as np
 from flask import Flask, request, jsonify, send_from_directory, session
@@ -40,7 +46,9 @@ from filters import (
     analyze_spectrum, compute_dominant_freq, compute_max_signal_freq,
 )
 
-app = Flask(__name__, static_folder='static', static_url_path='')
+app = Flask(__name__,
+            static_folder=os.path.join(_WEB_DIR, 'static'),
+            static_url_path='')
 app.secret_key = os.environ.get('SECRET_KEY', 'ardupilot-log-viewer-dev-key')
 
 # ======================== Per-Session State ========================
