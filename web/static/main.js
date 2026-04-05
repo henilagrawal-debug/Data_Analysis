@@ -43,7 +43,13 @@ function toast(msg, ms = 3000) {
 
 async function api(url, opts = {}) {
     const res = await fetch(url, opts);
-    const data = await res.json();
+    const text = await res.text();
+    let data;
+    try {
+        data = JSON.parse(text);
+    } catch (_) {
+        throw new Error(res.ok ? 'Empty server response' : `Server error (HTTP ${res.status}). File may be too large for free hosting.`);
+    }
     if (!res.ok || data.error) {
         throw new Error(data.error || `HTTP ${res.status}`);
     }

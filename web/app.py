@@ -50,6 +50,7 @@ app = Flask(__name__,
             static_folder=os.path.join(_WEB_DIR, 'static'),
             static_url_path='')
 app.secret_key = os.environ.get('SECRET_KEY', 'ardupilot-log-viewer-dev-key')
+app.config['MAX_CONTENT_LENGTH'] = 200 * 1024 * 1024  # 200 MB max upload
 
 # ======================== Per-Session State ========================
 _DEFAULT_DERIV_FILE = str(Path(__file__).parent / 'saved_derivatives.json')
@@ -329,8 +330,13 @@ def upload_file():
 
     try:
         log_data = parse_bin_log(tmp_path)
+    except MemoryError:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        return jsonify(error='File too large for server memory'), 413
     except Exception as e:
-        os.unlink(tmp_path)
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
         return jsonify(error=f'Parse error: {e}'), 400
     finally:
         if os.path.exists(tmp_path):

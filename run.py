@@ -29,7 +29,7 @@ def install_deps():
         sys.executable, '-m', 'pip', 'install', '-r', str(REQ_FILE),
     ])
     print("Dependencies installed.\n")
-
+    
 
 def main():
     install_deps()
