@@ -56,7 +56,8 @@ class _FmtDef:
     """Stores a parsed FMT definition for one message type."""
     __slots__ = ('name', 'fmt', 'labels', 'length',
                  'num_mask', 'num_labels', 'num_cols',
-                 'struct_fmt', 'struct_size', 'scales')
+                 'struct_fmt', 'struct_size', 'scales',
+                 'num_indices', 'num_scales')
 
     def __init__(self, name: str, fmt: str, labels: list[str], length: int):
         self.name = name
@@ -88,6 +89,28 @@ class _FmtDef:
         self.struct_fmt = '<' + ''.join(parts)
         self.struct_size = struct.calcsize(self.struct_fmt)
         self.scales = scales
+
+        # Precompute indices and scales for numeric-only extraction
+        # This maps from the flat unpacked tuple index to (output_col, scale)
+        self.num_indices = []  # [(tuple_idx, scale), ...] for each numeric output col
+        self.num_scales = []   # matching scales
+        vi = 0
+        num_col = 0
+        for ci, ch in enumerate(fmt):
+            entry = _FMT_TABLE.get(ch)
+            if ch == 'a':
+                vi += 32
+            elif entry is None:
+                vi += 1
+            elif not entry[2]:
+                vi += 1  # string field
+            else:
+                # numeric field
+                if ci < len(self.num_mask) and self.num_mask[ci]:
+                    self.num_indices.append(vi)
+                    self.num_scales.append(scales[ci])
+                    num_col += 1
+                vi += 1
 
 
 def _make_fmt_def():
@@ -165,30 +188,32 @@ def parse_bin_log(filename: str) -> dict:
     fmts: dict[int, _FmtDef] = {}
     fmts[FMT_TYPE] = _make_fmt_def()
 
+    _HDR = b'\xa3\x95'
+
     # ===== Pass 1: Scan for FMT definitions and catalog messages =====
     msg_positions = []  # list of (position, type)
     pos = 0
 
-    while pos <= n_bytes - 3:
-        if raw[pos] != HDR1 or raw[pos + 1] != HDR2:
-            pos += 1
-            continue
+    while True:
+        idx = raw.find(_HDR, pos)
+        if idx < 0 or idx + 2 >= n_bytes:
+            break
 
-        t = raw[pos + 2]
+        t = raw[idx + 2]
 
         if t not in fmts:
-            pos += 1
+            pos = idx + 1
             continue
 
         fmt_def = fmts[t]
-        if pos + fmt_def.length > n_bytes:
+        if idx + fmt_def.length > n_bytes:
             break
 
-        msg_positions.append((pos, t))
+        msg_positions.append((idx, t))
 
         # If FMT, parse it to learn about new message types
         if t == FMT_TYPE:
-            payload = raw[pos + 3: pos + fmt_def.length]
+            payload = raw[idx + 3: idx + fmt_def.length]
             _, all_vals = _decode_payload(payload, fmt_def)
             if all_vals is not None and len(all_vals) >= 5:
                 n_type = int(all_vals[0])
@@ -200,7 +225,7 @@ def parse_bin_log(filename: str) -> dict:
                     labels = [l.strip() for l in n_lbl.split(',')]
                     fmts[n_type] = _FmtDef(n_name, n_fmt, labels, n_len)
 
-        pos += fmt_def.length
+        pos = idx + fmt_def.length
 
     print(f"Pass 1 complete: {len(msg_positions)} messages cataloged")
 
@@ -228,14 +253,21 @@ def parse_bin_log(filename: str) -> dict:
         if fmt_def.num_cols == 0 or t not in data_mats:
             continue
 
+        # Fast numeric-only extraction using precomputed indices
         payload = raw[p + 3: p + fmt_def.length]
-        num_vals, _ = _decode_payload(payload, fmt_def)
-        if num_vals is None:
+        if len(payload) < fmt_def.struct_size:
+            continue
+        try:
+            raw_vals = struct.unpack_from(fmt_def.struct_fmt, payload)
+        except struct.error:
             continue
 
         row = data_counts[t]
-        ncols = min(len(num_vals), fmt_def.num_cols)
-        data_mats[t][row, :ncols] = num_vals[:ncols]
+        ni = fmt_def.num_indices
+        ns = fmt_def.num_scales
+        mat = data_mats[t]
+        for c in range(len(ni)):
+            mat[row, c] = raw_vals[ni[c]] * ns[c]
         data_counts[t] = row + 1
 
         if (k + 1) % 200000 == 0:
