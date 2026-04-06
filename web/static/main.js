@@ -42,7 +42,12 @@ function toast(msg, ms = 3000) {
 }
 
 async function api(url, opts = {}) {
-    const res = await fetch(url, opts);
+    let res;
+    try {
+        res = await fetch(url, opts);
+    } catch (_) {
+        throw new Error('Server unreachable. It may have run out of memory — try a smaller file.');
+    }
     const text = await res.text();
     let data;
     try {
@@ -92,6 +97,12 @@ function bindEvents() {
 async function handleFileUpload() {
     const file = $('#fileInput').files[0];
     if (!file) return;
+
+    // Warn if file is very large (Render free tier has 512MB RAM)
+    const sizeMB = file.size / (1024 * 1024);
+    if (sizeMB > 80 && !confirm(`This file is ${sizeMB.toFixed(0)} MB. Large files may fail on the free server. Continue?`)) {
+        return;
+    }
 
     showLoading();
     const form = new FormData();

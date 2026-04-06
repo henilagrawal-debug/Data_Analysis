@@ -12,6 +12,8 @@ Usage:
     # log_data['GPS_0']['Spd'] -> numpy array
 """
 
+import gc
+import mmap
 import struct
 import re
 import numpy as np
@@ -153,9 +155,12 @@ def parse_bin_log(filename: str) -> dict:
               Instance-split messages become MSG_0, MSG_1, etc.
     """
     path = Path(filename)
-    raw = path.read_bytes()
-    n_bytes = len(raw)
+    n_bytes = path.stat().st_size
     print(f"Loaded {filename} ({n_bytes / 1e6:.1f} MB)")
+
+    # Memory-map the file to avoid loading it entirely into Python heap
+    _fh = open(filename, 'rb')
+    raw = mmap.mmap(_fh.fileno(), 0, access=mmap.ACCESS_READ)
 
     # Format table indexed by type (0-255)
     fmts: dict[int, _FmtDef] = {}
@@ -239,6 +244,12 @@ def parse_bin_log(filename: str) -> dict:
 
     print("Pass 2 complete: all messages parsed")
 
+    # Free file mapping and intermediate data
+    raw.close()
+    _fh.close()
+    del msg_positions
+    gc.collect()
+
     # ===== Build output dict with named fields, split by instance =====
     log_data: dict[str, dict[str, np.ndarray]] = {}
 
@@ -282,6 +293,10 @@ def parse_bin_log(filename: str) -> dict:
             for ci, lbl in enumerate(num_labels):
                 safe_lbl = re.sub(r'[^A-Za-z0-9_]', '_', lbl)
                 log_data[name][safe_lbl] = mat[:, ci].copy()
+
+    # Free preallocated arrays
+    del data_mats
+    gc.collect()
 
     print(f"Done. {len(log_data)} message types: {', '.join(sorted(log_data.keys()))}")
     return log_data
