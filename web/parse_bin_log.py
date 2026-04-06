@@ -52,7 +52,6 @@ HDR2 = 0x95
 FMT_TYPE = 128
 FMT_LEN = 89
 
-
 class _FmtDef:
     """Stores a parsed FMT definition for one message type."""
     __slots__ = ('name', 'fmt', 'labels', 'length',
@@ -219,7 +218,7 @@ def parse_bin_log(filename: str) -> dict:
             continue
         fmt_def = fmts[t]
         if fmt_def.num_cols > 0:
-            data_mats[t] = np.zeros((count, fmt_def.num_cols), dtype=np.float64)
+            data_mats[t] = np.zeros((count, fmt_def.num_cols), dtype=np.float32)
             data_counts[t] = 0
 
     for k, (p, t) in enumerate(msg_positions):
@@ -287,12 +286,12 @@ def parse_bin_log(filename: str) -> dict:
                 log_data[inst_name] = {}
                 for ci, lbl in enumerate(num_labels):
                     safe_lbl = re.sub(r'[^A-Za-z0-9_]', '_', lbl)
-                    log_data[inst_name][safe_lbl] = mat[mask, ci].copy()
+                    log_data[inst_name][safe_lbl] = mat[mask, ci].astype(np.float32)
         else:
             log_data[name] = {}
             for ci, lbl in enumerate(num_labels):
                 safe_lbl = re.sub(r'[^A-Za-z0-9_]', '_', lbl)
-                log_data[name][safe_lbl] = mat[:, ci].copy()
+                log_data[name][safe_lbl] = mat[:, ci].astype(np.float32)
 
     # Free preallocated arrays
     del data_mats
