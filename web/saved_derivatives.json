@@ -119,5 +119,48 @@
       "input": "DERIVED.AOA_derived_deg",
       "cutoffHz": 1.2
     }
+  },
+  "D_derived": {
+    "expr": "-62* DERIVED.acc_derived+ DERIVED.T_derived-62*9.81*sind( DERIVED.Gamma_derived_deg)",
+    "recipe": {
+      "type": "expr",
+      "input": "-62* DERIVED.acc_derived+ DERIVED.T_derived-62*9.81*sind( DERIVED.Gamma_derived_deg)"
+    }
+  },
+  "J_derived": {
+    "expr": "DERIVED.Airspeed_filter/( DERIVED.RPM_derived/60*0.12)",
+    "recipe": {
+      "type": "expr",
+      "input": "DERIVED.Airspeed_filter/( DERIVED.RPM_derived/60*0.12)"
+    }
+  },
+  "L_by_D_derived": {
+    "expr": "DERIVED.Lift_derived/ DERIVED.D_derived",
+    "recipe": {
+      "type": "expr",
+      "input": "DERIVED.Lift_derived/ DERIVED.D_derived"
+    }
+  },
+  "RPM_derived": {
+    "expr": "39543* DERIVED.Thorttle_derived/100-3792.7",
+    "recipe": {
+      "type": "expr",
+      "input": "39543* DERIVED.Thorttle_derived/100-3792.7"
+    }
+  },
+  "T_derived": {
+    "expr": "0.85*8 * 1.19 * (DERIVED.RPM_derived/60)^2 * 0.12^4*(-0.0283 *(DERIVED.J_derived)^2 + -0.917*DERIVED.J_derived +1.3647)",
+    "recipe": {
+      "type": "expr",
+      "input": "0.85*8 * 1.19 * (DERIVED.RPM_derived/60)^2 * 0.12^4*(-0.0283 *(DERIVED.J_derived)^2 + -0.917*DERIVED.J_derived +1.3647)"
+    }
+  },
+  "acc_derived": {
+    "expr": "d(DERIVED.Airspeed_filter)/dt [lpf=4.0Hz]",
+    "recipe": {
+      "type": "derivative",
+      "input": "DERIVED.Airspeed_filter",
+      "cutoffHz": 4.0
+    }
   }
 }
