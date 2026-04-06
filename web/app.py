@@ -246,25 +246,48 @@ def _recompute_derived(nm, st):
 
 
 def _recompute_all_saved(st):
-    """Recompute all saved derivatives in dependency order."""
+    """Recompute all saved derivatives in topological (dependency) order."""
     dd = st['derived_data']
     names = list(dd.keys())
 
-    def dep_order(nm):
+    # Build dependency graph: for each derived param, find which other
+    # derived params it references via DERIVED.xxx
+    deps = {}
+    for nm in names:
         d = dd[nm]
         inp = ''
         if d.get('recipe') and 'input' in d['recipe']:
             inp = d['recipe']['input']
         elif d.get('expr'):
             inp = d['expr']
-        return 1 if 'DERIVED' in inp else 0
+        refs = set(_re.findall(r'DERIVED\.\w+', inp))
+        refs = {r.split('.', 1)[1] for r in refs}
+        deps[nm] = refs & set(names)
 
-    names.sort(key=dep_order)
+    # Topological sort (Kahn's algorithm)
+    in_degree = {nm: len(deps[nm]) for nm in names}
+    queue = sorted([nm for nm in names if in_degree[nm] == 0])
+    ordered = []
+    while queue:
+        nm = queue.pop(0)
+        ordered.append(nm)
+        for other in names:
+            if nm in deps[other]:
+                in_degree[other] -= 1
+                if in_degree[other] == 0:
+                    queue.append(other)
+                    queue.sort()
+
+    # Add any remaining (circular deps) at the end
     for nm in names:
+        if nm not in ordered:
+            ordered.append(nm)
+
+    for nm in ordered:
         try:
             _recompute_derived(nm, st)
         except Exception as e:
-            print(f"Warning: saved deriv '{nm}' failed: {e}")
+            print(f"Warning: saved deriv \'{nm}\' failed: {e}")
 
 
 def _build_param_tree(st):
